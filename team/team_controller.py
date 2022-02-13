@@ -1,5 +1,4 @@
-from math import sin
-from math import cos, sqrt
+from math import sin, cos
 from sat_controller import SatControllerInterface, sat_msgs
 
 # Team code is written as an implementation of various methods
@@ -15,10 +14,13 @@ class TeamController(SatControllerInterface):
         """ Runs any team based initialization """
         # Run any initialization you need
 
-        # Example of persistant data
+        # Persistant data
         self.counter = 0
-        self.state = 1;
-        self.R = 0.6;
+        self.sequence = 0
+        self.buffer_radius = 0.6
+        self.docking_distance = 0.2
+        #self.approach_speed = 0.3
+        #self.docking_speed = 0.
         
         # Example of logging
         self.logger.info("Initialized :)")
@@ -27,8 +29,8 @@ class TeamController(SatControllerInterface):
 
         # Update team info
         team_info = sat_msgs.TeamInfo()
-        team_info.teamName = "Example"
-        team_info.teamID = 1111
+        team_info.teamName = "Capeture"
+        team_info.teamID = 4
 
         # Return team info
         return team_info
@@ -36,10 +38,6 @@ class TeamController(SatControllerInterface):
     def team_run(self, system_state: sat_msgs.SystemState, satellite_state: sat_msgs.SatelliteState, dead_sat_state: sat_msgs.SatelliteState) -> sat_msgs.ControlMessage:
         """ Takes in a system state, satellite state """
         
-        if(self.state == 1):
-            target_x = dead_sat_state.pose.x + sin(dead_sat_state.pose.theta) * self.R
-            target_y = dead_sat_state.pose.y - cos(dead_sat_state.pose.theta) * self.R
-
         print(dead_sat_state)
         print(satellite_state)
 
@@ -56,28 +54,33 @@ class TeamController(SatControllerInterface):
         # Create a thrust command message
         control_message = sat_msgs.ControlMessage()
 
-        # point B cooridnates (after first move)
+        # Move from point A to point B along a straight line (PID)
+        if(self.sequence == 0):
+            control_message.thrust.f_x = -2.0 * (satellite_state.pose.x - (dead_sat_state.pose.x + sin(dead_sat_state.pose.theta)*self.buffer_radius)) - 3.0 * satellite_state.twist.v_x
+            control_message.thrust.f_y = -2.0 * (satellite_state.pose.y - (dead_sat_state.pose.y - cos(dead_sat_state.pose.theta)*self.buffer_radius)) - 3.0 * satellite_state.twist.v_y
+            if (abs(satellite_state.pose.x - (dead_sat_state.pose.x + sin(dead_sat_state.pose.theta)*self.buffer_radius)) < 0.01 and abs(satellite_state.pose.y - (dead_sat_state.pose.y - cos(dead_sat_state.pose.theta)*self.buffer_radius)) < 0.01):
+                self.sequence = 1
+            return control_message
+
+        # Rotate in point B to face dead satellite
+        elif(self.sequence == 1):
+            control_message.thrust.tau = - 0.3 * (satellite_state.pose.theta - dead_sat_state.pose.theta - 3.1415) - satellite_state.twist.omega
+            if (abs(satellite_state.pose.theta - dead_sat_state.pose.theta) < 3.1415/180):
+                self.sequence = 2
+            return control_message
         
-        # point C coordinates (after second move, R = exclusion zone radius + buffer)
+        # Dock to dead satellite at point C
+        elif(self.sequence == 2):
+            control_message.thrust.f_x = -2.0 * (satellite_state.pose.x - (dead_sat_state.pose.x + sin(dead_sat_state.pose.theta)*self.docking_distance)) - 3.0 * satellite_state.twist.v_x
+            control_message.thrust.f_y = -2.0 * (satellite_state.pose.y - (dead_sat_state.pose.y - cos(dead_sat_state.pose.theta)*self.docking_distance)) - 3.0 * satellite_state.twist.v_y
+            if (abs(satellite_state.pose.x - (dead_sat_state.pose.x + sin(dead_sat_state.pose.theta)*self.docking_distance)) < 0.01 and abs(satellite_state.pose.y - (dead_sat_state.pose.y - cos(dead_sat_state.pose.theta)*self.docking_distance)) < 0.01):
+                self.sequence = 3
+            return control_message
+        
+        # point B coordinates (after second move, R = exclusion zone radius + buffer)
         # x = dead_sat_state.pose.x + sin(dead_sat_state.pose.theta) * R
         # y = dead_sat_state.pose.y - cos(dead_sat_state.pose.theta) * R
         
-        # code for changing state
-        if(self.state == 1):
-            if(sqrt((satellite_state.pose.x-target_x)^2 + (satellite_state.pose.y-target_y)^2) < self.R):
-                self.state = 2
-                target_x = 1
-                target_y = 1
-
-        # Set thrust command values, basic PD controller that drives the sat to [0, -1]
-        control_message.thrust.f_x = -2.0 * (satellite_state.pose.x - target_x) #- 3.0 * satellite_state.twist.v_x
-        control_message.thrust.f_y = -2.0 * (satellite_state.pose.y - target_y) #- 3.0 * satellite_state.twist.v_y
-        #control_message.thrust.tau = - 0.3 * (satellite_state.pose.theta - dead_sat_state.pose.theta - 3.1415) - satellite_state.twist.omega
-
-
-        # Return control message
-        return control_message
-
     def team_reset(self) -> None:
         # Run any reset code
         pass

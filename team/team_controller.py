@@ -1,5 +1,5 @@
 from math import sin
-from math import cos
+from math import cos, sqrt
 from sat_controller import SatControllerInterface, sat_msgs
 
 # Team code is written as an implementation of various methods
@@ -17,7 +17,9 @@ class TeamController(SatControllerInterface):
 
         # Example of persistant data
         self.counter = 0
-
+        self.state = 1;
+        self.R = 0.6;
+        
         # Example of logging
         self.logger.info("Initialized :)")
         self.logger.warning("Warning...")
@@ -33,6 +35,10 @@ class TeamController(SatControllerInterface):
 
     def team_run(self, system_state: sat_msgs.SystemState, satellite_state: sat_msgs.SatelliteState, dead_sat_state: sat_msgs.SatelliteState) -> sat_msgs.ControlMessage:
         """ Takes in a system state, satellite state """
+        
+        if(self.state == 1):
+            target_x = dead_sat_state.pose.x + sin(dead_sat_state.pose.theta) * self.R
+            target_y = dead_sat_state.pose.y - cos(dead_sat_state.pose.theta) * self.R
 
         print(dead_sat_state)
         print(satellite_state)
@@ -55,11 +61,18 @@ class TeamController(SatControllerInterface):
         # point C coordinates (after second move, R = exclusion zone radius + buffer)
         # x = dead_sat_state.pose.x + sin(dead_sat_state.pose.theta) * R
         # y = dead_sat_state.pose.y - cos(dead_sat_state.pose.theta) * R
+        
+        # code for changing state
+        if(self.state == 1):
+            if(sqrt((satellite_state.pose.x-target_x)^2 + (satellite_state.pose.y-target_y)^2) < self.R):
+                self.state = 2
+                target_x = 1
+                target_y = 1
 
         # Set thrust command values, basic PD controller that drives the sat to [0, -1]
-        control_message.thrust.f_x = -2.0 * (satellite_state.pose.x - (dead_sat_state.pose.x + sin(dead_sat_state.pose.theta)*0.6)) - 3.0 * satellite_state.twist.v_x
-        control_message.thrust.f_y = -2.0 * (satellite_state.pose.y - (dead_sat_state.pose.y - cos(dead_sat_state.pose.theta)*0.6)) - 3.0 * satellite_state.twist.v_y
-        control_message.thrust.tau = - 0.3 * (satellite_state.pose.theta - dead_sat_state.pose.theta - 3.1415) - satellite_state.twist.omega
+        control_message.thrust.f_x = -2.0 * (satellite_state.pose.x - target_x) #- 3.0 * satellite_state.twist.v_x
+        control_message.thrust.f_y = -2.0 * (satellite_state.pose.y - target_y) #- 3.0 * satellite_state.twist.v_y
+        #control_message.thrust.tau = - 0.3 * (satellite_state.pose.theta - dead_sat_state.pose.theta - 3.1415) - satellite_state.twist.omega
 
 
         # Return control message
